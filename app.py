@@ -209,30 +209,48 @@ def preparar_datos(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     df = df.copy()
 
-    # ---- Orden, Fecha, Ciudad ----
-    df = df.rename(columns={
-        config["orden"]: "N_ORDEN",
-        config["fecha"]: "FECHA",
-        config["ciudad"]: "CIUDAD",
-    })
+    # ---- Extraer las columnas fuente ANTES de tocar nombres ----
+    # (se guardan como Series independientes para evitar el problema de
+    # terminar con dos columnas con el mismo nombre, por ejemplo si el
+    # archivo ya tiene una columna "FECHA" y además se elige otra columna
+    # como fecha de análisis y también se renombra a "FECHA").
+    orden_serie = df[config["orden"]]
+    fecha_serie = df[config["fecha"]]
+    ciudad_serie = df[config["ciudad"]]
 
-    df["N_ORDEN"] = df["N_ORDEN"].apply(limpiar_valor_orden)
-    df["CIUDAD"] = df["CIUDAD"].astype(str).str.strip().str.upper().replace({"NAN": None})
+    if config["ruta_modo"] == "columna":
+        ruta_fuente_serie = df[config["ruta_columna"]]
+    elif config["ruta_modo"] == "derivada":
+        ruta_fuente_serie = df[config["ruta_fuente"]]
+    else:
+        ruta_fuente_serie = None  # se usará CIUDAD ya procesada
+
+    tipo_serie = df[config["tipo_movimiento"]] if config.get("tipo_movimiento") else None
+
+    # ---- Eliminar cualquier columna original que choque con los nombres
+    # de destino, para evitar columnas duplicadas tras la asignación ----
+    columnas_destino = ["N_ORDEN", "FECHA", "CIUDAD", "RUTA", "TIPO_MOVIMIENTO"]
+    df = df.drop(columns=[c for c in columnas_destino if c in df.columns], errors="ignore")
+
+    # ---- Orden, Fecha, Ciudad ----
+    df["N_ORDEN"] = orden_serie.apply(limpiar_valor_orden)
+    df["FECHA"] = fecha_serie
+    df["CIUDAD"] = ciudad_serie.astype(str).str.strip().str.upper().replace({"NAN": None})
 
     # ---- Ruta: columna directa, igual a Ciudad, o derivada desde texto ----
     if config["ruta_modo"] == "columna":
-        df["RUTA"] = df[config["ruta_columna"]].astype(str).str.strip().str.upper().replace({"NAN": None})
+        df["RUTA"] = ruta_fuente_serie.astype(str).str.strip().str.upper().replace({"NAN": None})
     elif config["ruta_modo"] == "ciudad":
         df["RUTA"] = df["CIUDAD"]
     else:
         ruta_derivada = derivar_ruta_desde_texto(
-            df[config["ruta_fuente"]], modo=config.get("ruta_derivacion_modo", "segmento_final")
+            ruta_fuente_serie, modo=config.get("ruta_derivacion_modo", "segmento_final")
         )
         df["RUTA"] = ruta_derivada.astype(str).str.strip().str.upper().replace({"NAN": None, "NONE": None})
 
     # ---- Tipo de movimiento (opcional) ----
-    if config.get("tipo_movimiento"):
-        df["TIPO_MOVIMIENTO"] = df[config["tipo_movimiento"]].astype(str).str.strip().str.upper()
+    if tipo_serie is not None:
+        df["TIPO_MOVIMIENTO"] = tipo_serie.astype(str).str.strip().str.upper()
 
     # ---- Fecha: forzar a datetime, descartar filas sin fecha válida ----
     df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce", dayfirst=True)
