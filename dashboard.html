@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Comparativo de Pedidos por Mes</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #11151d;
+    --panel-2: #161b25;
+    --border: #232a37;
+    --text: #e7ebf3;
+    --muted: #8b93a7;
+    --accent: #4f8cff;
+    --accent-soft: rgba(79,140,255,0.12);
+    --weekend: rgba(255,255,255,0.02);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 28px 20px 60px;
+  }
+  .layout {
+    max-width: 1080px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  header h1 {
+    font-size: 21px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  header p {
+    margin: 0 0 20px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .full { grid-column: 1 / -1; }
+
+  /* ---- selector lateral ---- */
+  .selector {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    position: sticky;
+    top: 20px;
+  }
+  .selector h3 {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+  .month-option {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 8px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 13.5px;
+    user-select: none;
+  }
+  .month-option:hover { background: var(--panel-2); }
+  .month-option input {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .month-option .swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .selector-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .selector-actions button {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    padding: 7px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .selector-actions button:hover { color: var(--text); border-color: #34405a; }
+
+  /* ---- tabla comparativa ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  thead th {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 12px 10px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  thead th.day-col {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    font-weight: 600;
+    width: 56px;
+  }
+  thead th .total-badge {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-top: 2px;
+  }
+  tbody td {
+    text-align: center;
+    padding: 8px 10px;
+    font-size: 13.5px;
+    border-bottom: 1px solid var(--border);
+    font-variant-numeric: tabular-nums;
+  }
+  tbody td.day-col {
+    text-align: left;
+    color: var(--muted);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr.weekend td.day-col { color: #6b7386; }
+  tbody tr.weekend { background: var(--weekend); }
+  td.zero { color: #3c4356; }
+  td.value {
+    font-weight: 600;
+  }
+  .empty-msg {
+    text-align: center;
+    color: var(--muted);
+    padding: 50px 20px;
+    font-size: 13.5px;
+  }
+
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+    .selector { position: static; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <header class="full">
+    <h1>Comparativo de Pedidos por Mes</h1>
+    <p>Cantidad de pedidos por día. Marca o desmarca meses para compararlos en paralelo.</p>
+  </header>
+
+  <div class="selector">
+    <h3>Meses</h3>
+    <div id="month-list"></div>
+    <div class="selector-actions">
+      <button id="btn-all">Todos</button>
+      <button id="btn-none">Ninguno</button>
+    </div>
+  </div>
+
+  <div id="table-wrap"></div>
+</div>
+
+<script>
+const DATA = {"2026-08": {"nombre": "Agosto 2026", "dias_en_mes": 31, "conteos": [0, 0, 0, 0, 12, 17, 23, 0, 0, 0, 28, 24, 11, 20, 0, 0, 32, 14, 21, 11, 19, 0, 0, 16, 15, 29, 14, 22, 0, 0, 8], "total": 336}, "2026-09": {"nombre": "Septiembre 2026", "dias_en_mes": 30, "conteos": [11, 21, 34, 16, 0, 0, 15, 10, 15, 27, 17, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "total": 166}};
+const COLORS = ['#4f8cff', '#35c98f', '#f2b84b', '#e8618c', '#9d7bff', '#3ecbe0'];
+
+const monthKeys = Object.keys(DATA).sort();
+const dias_es = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+// referencia de día de semana: usamos el primer día real del mes (año-mes-01)
+function weekdayIndex(year, month, day) {
+  const d = new Date(year, month - 1, day);
+  return (d.getDay() + 6) % 7; // 0 = lunes
+}
+
+let visible = {};
+monthKeys.forEach((mk, i) => { visible[mk] = true; });
+
+function renderSelector() {
+  const list = document.getElementById('month-list');
+  list.innerHTML = monthKeys.map((mk, i) => `
+    <label class="month-option">
+      <input type="checkbox" data-mk="${mk}" ${visible[mk] ? 'checked' : ''}>
+      <span class="swatch" style="background:${COLORS[i % COLORS.length]}"></span>
+      ${DATA[mk].nombre}
+    </label>
+  `).join('');
+  list.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', e => {
+      visible[e.target.dataset.mk] = e.target.checked;
+      renderTable();
+    });
+  });
+}
+
+function renderTable() {
+  const activeMonths = monthKeys.filter(mk => visible[mk]);
+  const wrap = document.getElementById('table-wrap');
+
+  if (activeMonths.length === 0) {
+    wrap.innerHTML = '<div class="empty-msg">Selecciona al menos un mes para ver la comparación.</div>';
+    return;
+  }
+
+  const maxDays = Math.max(...activeMonths.map(mk => DATA[mk].dias_en_mes));
+
+  let thead = '<tr><th class="day-col">Día</th>' + activeMonths.map(mk => {
+    const m = DATA[mk];
+    return `<th>${m.nombre}<span class="total-badge">${m.total} pedidos</span></th>`;
+  }).join('') + '</tr>';
+
+  let rows = '';
+  for (let day = 1; day <= maxDays; day++) {
+    // detectar si es fin de semana usando el primer mes activo como referencia
+    const [refY, refM] = activeMonths[0].split('-').map(Number);
+    const inRange = day <= DATA[activeMonths[0]].dias_en_mes;
+    const wIdx = inRange ? weekdayIndex(refY, refM, day) : -1;
+    const isWeekend = wIdx === 5 || wIdx === 6;
+
+    rows += `<tr class="${isWeekend ? 'weekend' : ''}">`;
+    rows += `<td class="day-col">${day}${inRange ? ' · ' + dias_es[wIdx] : ''}</td>`;
+    activeMonths.forEach(mk => {
+      const m = DATA[mk];
+      if (day > m.dias_en_mes) {
+        rows += `<td></td>`;
+      } else {
+        const v = m.conteos[day - 1];
+        rows += v > 0
+          ? `<td class="value">${v}</td>`
+          : `<td class="zero">—</td>`;
+      }
+    });
+    rows += `</tr>`;
+  }
+
+  wrap.innerHTML = `<table><thead>${thead}</thead><tbody>${rows}</tbody></table>`;
+}
+
+document.getElementById('btn-all').onclick = () => {
+  monthKeys.forEach(mk => visible[mk] = true);
+  renderSelector(); renderTable();
+};
+document.getElementById('btn-none').onclick = () => {
+  monthKeys.forEach(mk => visible[mk] = false);
+  renderSelector(); renderTable();
+};
+
+renderSelector();
+renderTable();
+</script>
+</body>
+</html>
