@@ -604,6 +604,81 @@ if df_filtrado.empty:
     st.stop()
 
 # ============================================================
+# COMPARATIVO MES x DÍA (según FECHA DE SOLICITUD)
+# ============================================================
+# Esta vista es independiente de la columna de fecha elegida arriba para el
+# resto del dashboard: siempre agrupa por día usando específicamente la
+# columna "FECHA DE SOLICITUD" del archivo original.
+col_fecha_solicitud = _buscar_columna(
+    {c: normalizar_texto(c) for c in df_crudo.columns}, ["FECHADESOLICITUD"]
+)
+
+tabla_comparativo = None
+totales_comparativo = None
+
+if col_fecha_solicitud is not None:
+    df_fs = pd.DataFrame({
+        "N_ORDEN": df_crudo[mapeo_final["orden"]].apply(limpiar_valor_orden),
+        "FECHA_SOLICITUD": pd.to_datetime(
+            df_crudo[col_fecha_solicitud], errors="coerce", dayfirst=True
+        ),
+    })
+    df_fs = df_fs.dropna(subset=["N_ORDEN", "FECHA_SOLICITUD"])
+
+    # Respeta los filtros globales de la barra lateral (año, mes, ciudad,
+    # ruta, tipo): solo se consideran pedidos que también quedaron dentro
+    # del conjunto ya filtrado más arriba.
+    ordenes_filtrados = set(df_filtrado["N_ORDEN"].unique())
+    df_fs = df_fs[df_fs["N_ORDEN"].isin(ordenes_filtrados)]
+    df_fs = df_fs.drop_duplicates(subset=["N_ORDEN", "FECHA_SOLICITUD"])
+
+    if not df_fs.empty:
+        df_fs["ANIO"] = df_fs["FECHA_SOLICITUD"].dt.year
+        df_fs["MES_NUM"] = df_fs["FECHA_SOLICITUD"].dt.month
+        df_fs["DIA"] = df_fs["FECHA_SOLICITUD"].dt.day
+        df_fs["MES_KEY"] = df_fs["FECHA_SOLICITUD"].dt.strftime("%Y-%m")
+        df_fs["MES_LABEL"] = df_fs["MES_NUM"].map(MESES_ES) + " " + df_fs["ANIO"].astype(str)
+
+        meses_info_comp = (
+            df_fs[["MES_KEY", "MES_LABEL"]]
+            .drop_duplicates()
+            .sort_values("MES_KEY")
+        )
+        opciones_meses_comp = meses_info_comp["MES_LABEL"].tolist()
+
+        st.sidebar.markdown("### 3. Comparativo Mes x Día")
+        st.sidebar.caption("Agrupado por **Fecha de Solicitud**. Marca los meses a comparar en paralelo.")
+        meses_comp_sel = st.sidebar.multiselect(
+            "Meses a mostrar",
+            opciones_meses_comp,
+            default=opciones_meses_comp,
+            key="meses_comparativo_dia",
+        )
+
+        if meses_comp_sel:
+            keys_sel = meses_info_comp[meses_info_comp["MES_LABEL"].isin(meses_comp_sel)]["MES_KEY"].tolist()
+            df_fs_sel = df_fs[df_fs["MES_KEY"].isin(keys_sel)]
+
+            conteo_comp = (
+                df_fs_sel.groupby(["MES_KEY", "DIA"])["N_ORDEN"]
+                .nunique()
+                .reset_index()
+                .rename(columns={"N_ORDEN": "PEDIDOS"})
+            )
+
+            tabla_comparativo = conteo_comp.pivot(index="DIA", columns="MES_KEY", values="PEDIDOS")
+            max_dia_comp = int(tabla_comparativo.index.max()) if len(tabla_comparativo) else 0
+            tabla_comparativo = tabla_comparativo.reindex(range(1, max_dia_comp + 1))
+
+            etiqueta_por_key = dict(zip(meses_info_comp["MES_KEY"], meses_info_comp["MES_LABEL"]))
+            orden_cols_comp = sorted(tabla_comparativo.columns)
+            tabla_comparativo = tabla_comparativo[orden_cols_comp]
+            tabla_comparativo.columns = [etiqueta_por_key[k] for k in orden_cols_comp]
+            tabla_comparativo.index.name = "Día"
+
+            totales_comparativo = tabla_comparativo.sum(numeric_only=True)
+
+# ============================================================
 # ENCABEZADO Y KPIs EJECUTIVOS
 # ============================================================
 st.title("🚚 Dashboard de Gestión Logística y Análisis de Pedidos")
@@ -635,12 +710,13 @@ st.divider()
 # ============================================================
 # PESTAÑAS DE ANÁLISIS
 # ============================================================
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📈 Pedidos por Tiempo",
     "🏙️ Ciudades y Rutas",
     "📊 Comparativos",
     "🏆 Mes y Semana Pico",
     "📥 Exportar",
+    "🗓️ Comparativo Mes x Día",
 ])
 
 # ---------------- TAB 1: PEDIDOS POR TIEMPO ----------------
@@ -773,6 +849,32 @@ with tab5:
     st.divider()
     st.subheader("Vista previa de datos filtrados")
     st.dataframe(df_filtrado.drop(columns=["FECHA_DIA"], errors="ignore"), use_container_width=True)
+
+# ---------------- TAB 6: COMPARATIVO MES X DÍA ----------------
+with tab6:
+    st.subheader("Pedidos por Día — Comparativo entre Meses")
+    st.caption(
+        "Cada columna es un mes (marca o desmarca en la barra lateral, sección "
+        "**3. Comparativo Mes x Día**). Cada fila es un día del mes. Las celdas "
+        "muestran la cantidad de pedidos únicos de ese día, agrupados por **Fecha de Solicitud**."
+    )
+
+    if col_fecha_solicitud is None:
+        st.warning(
+            "No se encontró una columna **FECHA DE SOLICITUD** en el archivo cargado. "
+            "Esta vista necesita esa columna para poder generarse."
+        )
+    elif tabla_comparativo is None or tabla_comparativo.empty:
+        st.info("Selecciona al menos un mes en la barra lateral para ver la comparación.")
+    else:
+        st.dataframe(
+            tabla_comparativo.style.format("{:.0f}", na_rep="—"),
+            use_container_width=True,
+        )
+
+        cols_totales = st.columns(len(totales_comparativo))
+        for c, (mes_label, total) in zip(cols_totales, totales_comparativo.items()):
+            c.metric(mes_label, f"{int(total):,}")
 
 st.sidebar.divider()
 st.sidebar.caption(
